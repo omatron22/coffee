@@ -1,6 +1,7 @@
 import lancedb
 from sentence_transformers import SentenceTransformer
 import os
+from index_metadata import get_file_hash
 
 # Initialize
 DB_PATH = "../storage/vector_db"
@@ -13,17 +14,21 @@ def init_db():
     return db
 
 def store_document(file_path, text, metadata=None):
-    """Store a document's embedding"""
+    """Store a document's embedding with metadata tracking"""
     db = init_db()
     
     # Generate embedding
     embedding = model.encode(text).tolist()
+    
+    # Get file hash for tracking
+    file_hash = get_file_hash(file_path)
     
     # Prepare data
     data = [{
         "vector": embedding,
         "text": text[:500],  # Store first 500 chars
         "file_path": file_path,
+        "file_hash": file_hash,
         "metadata": str(metadata or {})
     }]
     
@@ -35,6 +40,19 @@ def store_document(file_path, text, metadata=None):
         table = db.create_table("documents", data)
     
     return True
+
+def delete_document(file_path):
+    """Delete a document from the index"""
+    db = init_db()
+    
+    try:
+        table = db.open_table("documents")
+        # LanceDB delete by filter
+        table.delete(f"file_path = '{file_path}'")
+        return True
+    except Exception as e:
+        print(f"Error deleting document: {e}")
+        return False
 
 def search_documents(query, limit=10):
     """Search for similar documents"""
@@ -50,6 +68,15 @@ def search_documents(query, limit=10):
         return results
     except:
         return []
+
+def get_indexed_count():
+    """Get total number of indexed documents"""
+    db = init_db()
+    try:
+        table = db.open_table("documents")
+        return table.count_rows()
+    except:
+        return 0
 
 if __name__ == "__main__":
     # Test storage
@@ -69,6 +96,7 @@ if __name__ == "__main__":
     )
     
     print("✅ Stored 2 test documents")
+    print(f"✅ Total indexed: {get_indexed_count()}")
     
     # Test search
     results = search_documents("database technology", limit=2)
